@@ -1,0 +1,11 @@
+x64
+libtarga.dir
+ImageEditing.dir
+Debug
+CMakeFiles
+*.vcxproj
+*.filters
+*.cmake
+CmakeCache.txt
+*.sln
+.vscode
