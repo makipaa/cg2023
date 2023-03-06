@@ -72,6 +72,9 @@ class TargaImage
 	// helper function for format conversion
         void RGBA_To_RGB(unsigned char *rgba, unsigned char *rgb);
 
+        // helper for the populosity algorithm
+        void Quant_Uniform_32(unsigned char *image);
+
         // reverse the rows of the image, some targas are stored bottom to top
 	TargaImage* Reverse_Rows(void);
 

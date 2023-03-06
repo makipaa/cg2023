@@ -211,57 +211,19 @@ TargaImage* TargaImage::Load_Image(char *filename)
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::To_Grayscale()
 {
-
-    double *img = new double[width*height*4];
-    int dim = width*height;
-
-    // for(int i=0; i < dim*4; i++)
-    // {
-    //     if(i < dim) {
-    //         img[i] = data[i]*0.299;
-    //     }
-    //     else if ((i > dim) & (i < dim*2))
-    //     {
-    //        img[i] = data[i]*0.587;
-    //     }
-    //     else if ((i > dim*2) & (i < dim*3))
-    //     {
-    //        img[i] = data[i]*0.114;
-    //     }
-    //     else
-    //     {
-    //         img[i] = data[i];
-    //     }
+    for(int h = 0; h < height; h++){
+        int row_offset = h*width;
         
-    // }
-
-    // for(int i = 0; i < dim; i+=4){
-    //     img[i] = data[i]*0.299;
-    // }
-    // for(int i = 1; i < dim+1; i+=4){
-    //     img[i] = data[i]*0.587;
-    // }
-    // for(int i = 2; i < dim+2; i+=4){
-    //     img[i] = data[i]*0.114;
-    // }
-    // for(int i = 3; i < dim+3; i+=4){
-    //     img[i] = 1;
-    // }
-
-    // for(int i = 0; i < dim; i++){
-    //     img[i] = data[i]*0.299 + data[i+1]*0.587 + data[i+2]*0.114;
-
-    // }
-
-    for(int i = 0; i < dim; i++){
-        img[i*4] = data[i*4]*0.05;
+        for(int w = 0; w < width; w++){
+            int y = (int) (data[(row_offset + w)*4 + RED]*0.299 + data[(row_offset + w)*4 + GREEN]*0.587 + data[(row_offset + w)*4 + BLUE]*0.114);
+            
+            data[(row_offset + w)*4 + RED] = y;
+            data[(row_offset + w)*4 + GREEN] = y;
+            data[(row_offset + w)*4 + BLUE] = y;
+        }
     }
-    
-    
-    
-    memcpy(data, img, sizeof(char)*dim*4);
-	
-	return false;
+
+	return true;
 }// To_Grayscale
 
 
@@ -273,8 +235,18 @@ bool TargaImage::To_Grayscale()
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::Quant_Uniform()
 {
-    ClearToBlack();
-    return false;
+    for(int h = 0; h < height; h++){
+        int row_offset = h*width;
+        
+        for(int w = 0; w < width; w++){
+            data[(row_offset + w)*4 + RED] = (int) floor(data[(row_offset + w)*4 + RED] / 32)*32 + 16;
+            data[(row_offset + w)*4 + GREEN] = (int) floor(data[(row_offset + w)*4 + GREEN] / 32)*32 + 16;
+            data[(row_offset + w)*4 + BLUE] = (int) floor(data[(row_offset + w)*4 + BLUE] / 64)*64 + 32;
+           
+        }
+    }
+
+    return true;
 }// Quant_Uniform
 
 
@@ -286,8 +258,19 @@ bool TargaImage::Quant_Uniform()
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::Quant_Populosity()
 {
-    ClearToBlack();
-    return false;
+    TargaImage::Quant_Uniform_32(data);
+    // for(int h = 0; h < height; h++){
+    //     int row_offset = h*width;
+        
+    //     for(int w = 0; w < width; w++){
+    //         data[(row_offset + w)*4 + RED] = (int) floor(data[(row_offset + w)*4 + RED] / 8)*8 + 4;
+    //         data[(row_offset + w)*4 + GREEN] = (int) floor(data[(row_offset + w)*4 + GREEN] / 8)*8 + 4;
+    //         data[(row_offset + w)*4 + BLUE] = (int) floor(data[(row_offset + w)*4 + BLUE] / 8)*8 + 4;
+    //     }
+    // }
+
+
+    return true;
 }// Quant_Populosity
 
 
@@ -677,6 +660,21 @@ void TargaImage::RGBA_To_RGB(unsigned char *rgba, unsigned char *rgb)
     }
 }// RGA_To_RGB
 
+
+/* Uniform quantization of each color channel to 32 shades
+*/
+void TargaImage::Quant_Uniform_32(unsigned char *image)
+{
+    for(int h = 0; h < height; h++){
+        int row_offset = h*width;
+        
+        for(int w = 0; w < width; w++){
+            image[(row_offset + w)*4 + RED] = (int) floor(image[(row_offset + w)*4 + RED] / 8)*8 + 4;
+            image[(row_offset + w)*4 + GREEN] = (int) floor(image[(row_offset + w)*4 + GREEN] / 8)*8 + 4;
+            image[(row_offset + w)*4 + BLUE] = (int) floor(image[(row_offset + w)*4 + BLUE] / 8)*8 + 4;
+        }
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 //
