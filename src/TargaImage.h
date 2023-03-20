@@ -75,6 +75,12 @@ class TargaImage
         // helper for the populosity algorithm
         void Quant_Uniform_32(unsigned char *image);
 
+        // Helper function for image filtering with filter size 5x5
+        void filter_image_5x5(double mask[][5]);
+
+        // Helper function for image filtering with filter size NxN
+        void filter_image_NxN(double **mask, unsigned int mask_width);
+
         // reverse the rows of the image, some targas are stored bottom to top
 	TargaImage* Reverse_Rows(void);
 

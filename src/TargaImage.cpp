@@ -20,6 +20,9 @@
 #include <sstream>
 #include <vector>
 #include <algorithm>
+#include <map>
+#include <tuple>
+
 
 using namespace std;
 
@@ -211,16 +214,14 @@ TargaImage* TargaImage::Load_Image(char *filename)
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::To_Grayscale()
 {
-    for(int h = 0; h < height; h++){
-        int row_offset = h*width;
-        
-        for(int w = 0; w < width; w++){
-            int y = (int) (data[(row_offset + w)*4 + RED]*0.299 + data[(row_offset + w)*4 + GREEN]*0.587 + data[(row_offset + w)*4 + BLUE]*0.114);
+  
+    for(int i = 0; i < width * height * 4; i += 4)
+    {
+        int y = (int) (data[i + RED]*0.299 + data[i + GREEN]*0.587 + data[i + BLUE]*0.114);
             
-            data[(row_offset + w)*4 + RED] = y;
-            data[(row_offset + w)*4 + GREEN] = y;
-            data[(row_offset + w)*4 + BLUE] = y;
-        }
+        data[i + RED] = y;
+        data[i + GREEN] = y;
+        data[i + BLUE] = y;
     }
 
 	return true;
@@ -235,20 +236,67 @@ bool TargaImage::To_Grayscale()
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::Quant_Uniform()
 {
-    for(int h = 0; h < height; h++){
-        int row_offset = h*width;
-        
-        for(int w = 0; w < width; w++){
-            data[(row_offset + w)*4 + RED] = (int) floor(data[(row_offset + w)*4 + RED] / 32)*32 + 16;
-            data[(row_offset + w)*4 + GREEN] = (int) floor(data[(row_offset + w)*4 + GREEN] / 32)*32 + 16;
-            data[(row_offset + w)*4 + BLUE] = (int) floor(data[(row_offset + w)*4 + BLUE] / 64)*64 + 32;
-           
-        }
-    }
+   for(int i = 0; i < width * height * 4; i += 4)
+   {
+        data[i + RED] = (int) floor(data[i + RED] / 32)*32;
+        data[i + GREEN] = (int) floor(data[i + GREEN] / 32)*32;
+        data[i + BLUE] = (int) floor(data[i + BLUE] / 64)*64;
+   }
 
     return true;
 }// Quant_Uniform
 
+bool compare_int_desc(const pair<tuple<int, int, int>, int> i, const pair<tuple<int, int, int>, int> j)
+{
+    return (i.second > j.second);
+}
+
+
+vector<pair<tuple<int, int, int>, int>> get_first_256_colors_by_popularity(int height, int width, unsigned char *data)
+{
+    map<tuple<int, int, int>, int> hist = {};
+
+    for(int i = 0; i < width * height * 4; i += 4)
+    { 
+        int r = data[i + RED];
+        int g = data[i + GREEN];
+        int b = data[i + BLUE];
+
+        tuple<int, int, int> rgb = make_tuple(r, g, b);
+
+        map<tuple<int, int, int>, int>::iterator it = hist.find(rgb);
+
+        // Value found, increment the count
+        if(it != hist.end()) {
+            it->second++;
+        } else {
+            hist.insert(std::make_pair(rgb, 1));
+        }
+    }
+
+    // Insert the map values to vector
+    vector<pair<tuple<int, int, int>, int>> sorted_hist;
+    map<tuple<int, int, int>, int>::iterator it2;
+
+    for(it2 = hist.begin(); it2 != hist.end(); it2++) 
+    {
+        sorted_hist.push_back(make_pair(it2->first, it2->second));
+    }
+
+    // Sort the values based on the histogram count
+    sort(sorted_hist.begin(), sorted_hist.end(), compare_int_desc);
+
+    // Get the first 256 colors
+    vector<pair<tuple<int, int, int>, int>> first_256;
+    first_256 = vector<pair<tuple<int, int, int>, int>>(sorted_hist.begin(), sorted_hist.begin() + 256);
+    return first_256;
+}
+
+
+bool compare_double_asc(const pair<tuple<int, int, int>, double> i, const pair<tuple<int, int, int>, double> j)
+{
+    return (i.second < j.second);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -258,17 +306,47 @@ bool TargaImage::Quant_Uniform()
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::Quant_Populosity()
 {
-    TargaImage::Quant_Uniform_32(data);
-    // for(int h = 0; h < height; h++){
-    //     int row_offset = h*width;
-        
-    //     for(int w = 0; w < width; w++){
-    //         data[(row_offset + w)*4 + RED] = (int) floor(data[(row_offset + w)*4 + RED] / 8)*8 + 4;
-    //         data[(row_offset + w)*4 + GREEN] = (int) floor(data[(row_offset + w)*4 + GREEN] / 8)*8 + 4;
-    //         data[(row_offset + w)*4 + BLUE] = (int) floor(data[(row_offset + w)*4 + BLUE] / 8)*8 + 4;
-    //     }
-    // }
 
+    TargaImage::Quant_Uniform_32(data);
+
+    vector<pair<tuple<int, int, int>, int>> first_256 = get_first_256_colors_by_popularity(height, width, data);
+
+    // Go through every pixel and find the closest color from the colormap
+    for(int i = 0; i < width * height * 4; i += 4)
+    {
+        int r = data[i + RED];
+        int g = data[i + GREEN];
+        int b = data[i + BLUE];
+
+        // Compute the euclidean distance to the most popular colors
+        vector<pair<tuple<int, int, int>, int>>::iterator it;
+
+        double min_distance = 100000.0;
+        int index = 0;
+        int color_target_index = 0;
+
+        for(it = first_256.begin(); it != first_256.end(); it++)
+        {   
+            double d_r = r - get<0>(it->first);
+            double d_g = g - get<1>(it->first);
+            double d_b = b - get<2>(it->first);
+            double d = d_r*d_r + d_g*d_g + d_b*d_b;
+
+            // If the distance was smaller than the previous min_distance, store the index
+            if(d < min_distance)
+            {
+                min_distance = d;
+                color_target_index = index;
+            }
+            index++;
+        }
+
+        // Insert the nearest color
+        data[i + RED] = get<0>((first_256.begin() + color_target_index)->first);
+        data[i + GREEN] = get<1>((first_256.begin() + color_target_index)->first);
+        data[i + BLUE] = get<2>((first_256.begin() + color_target_index)->first);        
+    }
+    
 
     return true;
 }// Quant_Populosity
@@ -487,8 +565,14 @@ bool TargaImage::Difference(TargaImage* pImage)
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::Filter_Box()
 {
-    ClearToBlack();
-    return false;
+    double mask[5][5] = {{0.04, 0.04, 0.04, 0.04, 0.04}, 
+                         {0.04, 0.04, 0.04, 0.04, 0.04},
+                         {0.04, 0.04, 0.04, 0.04, 0.04},
+                         {0.04, 0.04, 0.04, 0.04, 0.04},
+                         {0.04, 0.04, 0.04, 0.04, 0.04}};
+    filter_image_5x5(mask);
+   
+    return true;
 }// Filter_Box
 
 
@@ -500,8 +584,14 @@ bool TargaImage::Filter_Box()
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::Filter_Bartlett()
 {
-    ClearToBlack();
-    return false;
+    double mask[5][5] = {{0.0123, 0.0247, 0.0370, 0.0247, 0.0123}, 
+                         {0.0247, 0.0494, 0.0741, 0.0494, 0.0247},
+                         {0.0370, 0.0741, 0.1111, 0.0741, 0.0370},
+                         {0.0247, 0.0494, 0.0741, 0.0494, 0.0247},
+                         {0.0123, 0.0247, 0.0370, 0.0247, 0.0123}};
+    filter_image_5x5(mask);
+   
+    return true;
 }// Filter_Bartlett
 
 
@@ -513,8 +603,14 @@ bool TargaImage::Filter_Bartlett()
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::Filter_Gaussian()
 {
-    ClearToBlack();
-    return false;
+    double mask[5][5] = {{0.0039, 0.0156, 0.0234, 0.0156, 0.0039},
+						{0.0156, 0.0625, 0.0937, 0.0625, 0.0156},
+						{0.0234, 0.0937, 0.1406, 0.0937, 0.0234},
+						{0.0156, 0.0625, 0.0937, 0.0625, 0.0156},
+						{0.0039, 0.0156, 0.0234, 0.0156, 0.0039}};
+    filter_image_5x5(mask);
+   
+    return true;
 }// Filter_Gaussian
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -526,8 +622,46 @@ bool TargaImage::Filter_Gaussian()
 
 bool TargaImage::Filter_Gaussian_N( unsigned int N )
 {
-    ClearToBlack();
-   return false;
+    // Dynamically allocate memory for the mask
+    double **mask;
+    mask = new double* [N];
+    for(unsigned int i = 0; i < N; i++)
+    {
+        mask[i] = new double[N];
+    }
+
+    double denominator = pow(2.0, (2*N-2));
+    
+    double prev = 0;
+    for(unsigned int i = 0; i < N; i++)
+    {
+        for(unsigned int j = 0; j < N; j++)
+        {
+            // Construct the pascal triangle with binomial
+            double binomial = Binomial(N-2, j);
+            double sum = binomial + prev;
+            prev = binomial;
+            if(i == 0)
+            {
+                mask[i][j] = sum * (1/denominator);
+            } else
+            {
+                mask[i][j] = sum*mask[0][i];
+            }
+            
+        }
+    }
+
+    filter_image_NxN(mask, N);
+
+    // Free the mask memory
+    for(unsigned int i = 0; i < N; i++)
+    {
+        delete[] mask[i];
+    }
+    delete[] mask;
+
+    return true;
 }// Filter_Gaussian_N
 
 
@@ -539,8 +673,43 @@ bool TargaImage::Filter_Gaussian_N( unsigned int N )
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::Filter_Edge()
 {
-    ClearToBlack();
-    return false;
+    unsigned char *image_filtered_high_pass = new unsigned char[width * height * 4];
+    memcpy(image_filtered_high_pass, data, sizeof(unsigned char)*width*height*4);
+
+    // First we smooth the image "data"
+    Filter_Gaussian();
+
+    // Then subtract the smoothed image from the original, which equals to high pass filtering
+    for(int i = 0; i < width*height; i++)
+    {
+        int r = image_filtered_high_pass[i*4 + RED] - data[i*4 + RED];
+        int g = image_filtered_high_pass[i*4 + GREEN] - data[i*4 + GREEN];
+        int b = image_filtered_high_pass[i*4 + BLUE] - data[i*4 + BLUE];
+        // Set negative values to zero
+        if(r < 0)
+        {
+           r = 0;
+        } 
+
+        if(g < 0)
+        {
+            g = 0;
+        } 
+
+        if(b < 0)
+        {
+            b = 0;
+        } 
+
+        image_filtered_high_pass[i*4 + RED] = r;
+        image_filtered_high_pass[i*4 + GREEN] = g;
+        image_filtered_high_pass[i*4 + BLUE] = b;
+    }
+
+    memcpy(data, image_filtered_high_pass, sizeof(unsigned char)*width*height*4);
+
+    delete[] image_filtered_high_pass;
+    return true;
 }// Filter_Edge
 
 
@@ -552,8 +721,43 @@ bool TargaImage::Filter_Edge()
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::Filter_Enhance()
 {
-    ClearToBlack();
-    return false;
+    unsigned char *edge_enchanced_image = new unsigned char[width * height * 4];
+    memcpy(edge_enchanced_image, data, sizeof(unsigned char)*width*height*4);
+
+    // Edge filter the image
+    Filter_Edge();
+    
+    for(int i = 0; i < width*height; i++)
+    {
+        int r = edge_enchanced_image[i*4 + RED] + data[i*4 + RED];
+        int g = edge_enchanced_image[i*4 + GREEN] + data[i*4 + GREEN];
+        int b = edge_enchanced_image[i*4 + BLUE] + data[i*4 + BLUE];
+        
+        // Overflow
+        if(r > 255)
+        {
+           r = 255;
+        } 
+
+        if(g > 255)
+        {
+            g = 255;
+        } 
+
+        if(b > 255)
+        {
+            b = 255;
+        } 
+
+        edge_enchanced_image[i*4 + RED] = r;
+        edge_enchanced_image[i*4 + GREEN] = g;
+        edge_enchanced_image[i*4 + BLUE] = b;
+    }
+
+    memcpy(data, edge_enchanced_image, sizeof(unsigned char)*width*height*4);
+
+    delete[] edge_enchanced_image;
+    return true;
 }// Filter_Enhance
 
 
@@ -605,7 +809,15 @@ bool TargaImage::Double_Size()
 ///////////////////////////////////////////////////////////////////////////////
 bool TargaImage::Resize(float scale)
 {
-    ClearToBlack();
+    float w = 1 / scale;
+    int x, y;
+
+    for(int i = 0; i < width*height; i++)
+    {
+        x = i % width;
+        y = i / width;
+    }
+
     return false;
 }// Resize
 
@@ -669,11 +881,126 @@ void TargaImage::Quant_Uniform_32(unsigned char *image)
         int row_offset = h*width;
         
         for(int w = 0; w < width; w++){
-            image[(row_offset + w)*4 + RED] = (int) floor(image[(row_offset + w)*4 + RED] / 8)*8 + 4;
-            image[(row_offset + w)*4 + GREEN] = (int) floor(image[(row_offset + w)*4 + GREEN] / 8)*8 + 4;
-            image[(row_offset + w)*4 + BLUE] = (int) floor(image[(row_offset + w)*4 + BLUE] / 8)*8 + 4;
+            image[(row_offset + w)*4 + RED] = (unsigned char) floor(image[(row_offset + w)*4 + RED] / 8)*8;
+            image[(row_offset + w)*4 + GREEN] = (unsigned char) floor(image[(row_offset + w)*4 + GREEN] / 8)*8;
+            image[(row_offset + w)*4 + BLUE] = (unsigned char) floor(image[(row_offset + w)*4 + BLUE] / 8)*8;
         }
     }
+}
+
+void TargaImage::filter_image_5x5(double mask[][5])
+{
+    // For storing the average RGB values
+    double avg_r, avg_g, avg_b;
+    // For image navigation
+    int x, y, pos_x, pos_y;
+    int current_index;
+    // Filter index
+    int f_x, f_y;
+
+    for(int i = 0; i < width*height; i++)
+    {
+        x = i % width;
+        y = i / width;
+
+        avg_r = 0;
+        avg_g = 0;
+        avg_b = 0;
+
+        for(f_x = 0; f_x < 5; f_x++)
+        {
+            pos_x = x - 2 + f_x;
+
+            if(pos_x < 0)
+            {
+                pos_x *= -1;
+            } else if(pos_x > (width - 1))
+            {
+                pos_x = (width-1)*2 - pos_x;
+            }
+
+            for(f_y = 0; f_y < 5; f_y++)
+            {
+                pos_y = y - 2 + f_y;
+                if(pos_y < 0)
+                {
+                    pos_y *= -1;
+                } else if(pos_y > (height - 1))
+                {
+                    pos_y = (height-1)*2 - pos_y;
+                }
+
+                // Calculate the current position
+                current_index = pos_x + pos_y*width;
+
+                avg_r += data[current_index*4 + RED] * mask[f_x][f_y];
+                avg_g += data[current_index*4 + GREEN] * mask[f_x][f_y];
+                avg_b += data[current_index*4 + BLUE] * mask[f_x][f_y];
+            }
+        }
+        data[i*4 + RED] = (int) avg_r;
+        data[i*4 + GREEN] =  (int) avg_g;
+        data[i*4 + BLUE] = (int) avg_b;
+    }
+}
+
+void TargaImage::filter_image_NxN(double **mask, unsigned int mask_width)
+{
+    // For storing the average RGB values
+    double avg_r, avg_g, avg_b;
+    // For image navigation
+    int x, y, pos_x, pos_y;
+    int current_index;
+    // Filter index
+    unsigned int f_x, f_y;
+    // Distance from filter center to edge
+    int f_diff = (int) (mask_width / 2);
+    
+    for(int i = 0; i < width*height; i++)
+    {
+        x = i % width;
+        y = i / width;
+
+        avg_r = 0;
+        avg_g = 0;
+        avg_b = 0;
+
+        for(f_x = 0; f_x < mask_width; f_x++)
+        {
+            pos_x = x - f_diff + f_x;
+
+            if(pos_x < 0)
+            {
+                pos_x *= -1;
+            } else if(pos_x > (width - 1))
+            {
+                pos_x = (width-1)*2 - pos_x;
+            }
+
+            for(f_y = 0; f_y < mask_width; f_y++)
+            {
+                pos_y = y - f_diff + f_y;
+                if(pos_y < 0)
+                {
+                    pos_y *= -1;
+                } else if(pos_y > (height - 1))
+                {
+                    pos_y = (height-1)*2 - pos_y;
+                }
+
+                // Calculate the current position
+                current_index = pos_x + pos_y*width;
+
+                avg_r += data[current_index*4 + RED] * mask[f_x][f_y];
+                avg_g += data[current_index*4 + GREEN] * mask[f_x][f_y];
+                avg_b += data[current_index*4 + BLUE] * mask[f_x][f_y];
+            }
+        }
+        data[i*4 + RED] = (int) avg_r;
+        data[i*4 + GREEN] =  (int) avg_g;
+        data[i*4 + BLUE] = (int) avg_b;
+    }
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////
